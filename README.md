@@ -51,7 +51,7 @@ The script will:
 |------|--------|
 | 1 | Install GVM packages via apt (gvm, gsad, gvm-tools, notus-scanner, etc.) |
 | 2 | Create PostgreSQL user `_gvm` and database `gvmd` with required extensions |
-| 3 | Initialize the GVM database schema and set Feed Owner ID |
+| 3 | Generate TLS certificates and initialize the GVM database schema |
 | 4 | Create systemd overrides (HTTP-only web UI on port 9392, gvmd TCP on 9390) |
 | 5 | Create the admin user (`admin` / `admin`) |
 | 6 | Sync vulnerability feeds (NVT, SCAP, CERT) |
@@ -319,7 +319,11 @@ The installer creates systemd overrides to make services work correctly on Kali:
 /etc/systemd/system/gvmd.service.d/override.conf
 ```
 
+- `Type=simple` + `PIDFile=` — overrides the base `Type=forking` so systemd tracks the process correctly
+- `--foreground` — keeps gvmd in the foreground for proper systemd lifecycle management
 - `--listen=127.0.0.1 --port=9390` — TCP listener for gsad connection
+- `--osp-vt-update=/run/ospd/ospd-openvas.sock` — connects to ospd-openvas for VT updates
+- `--listen-group=_gvm` — restricts access to the `_gvm` group
 
 ### Managing via systemctl
 
@@ -351,6 +355,8 @@ sudo systemctl status gvmd
 | `/var/log/gvm/` | Log files (gvmd.log, ospd-openvas.log) |
 | `/etc/systemd/system/gsad.service.d/override.conf` | gsad systemd override |
 | `/etc/systemd/system/gvmd.service.d/override.conf` | gvmd systemd override |
+| `/var/lib/gvm/CA/` | TLS certificates (servercert.pem, cacert.pem, clientcert.pem) |
+| `/var/lib/gvm/private/CA/` | TLS private keys (serverkey.pem, cakey.pem, clientkey.pem) |
 | `/run/gvmd/gvmd.sock` | Unix socket for local gvmd connection |
 | `/run/ospd/ospd-openvas.sock` | Unix socket for scanner connection |
 
@@ -386,15 +392,30 @@ gvm-restart
 
 ### "Feed owner not set" in Task Wizard
 
-Feeds haven't finished syncing yet. Wait for the sync to complete:
+The Feed Owner ID must be set after the admin user is created and gvmd is running. The installer attempts this automatically, but if it was skipped or you see this warning in the web UI, set it manually:
 
 ```bash
-# Monitor progress
+# Get the admin user UUID
+ADMIN_UUID=$(sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | awk '/^admin/{print $2}')
+
+# Set Feed Owner ID
+sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID"
+
+# Verify
+sudo -u postgres psql -d gvmd -c "SELECT name, value FROM settings WHERE name='Feed Owner ID';"
+```
+
+If feeds are still syncing, wait for them to complete before running the Task Wizard. Monitor progress:
+
+```bash
+# Watch feed sync log
 tail -f /tmp/gvm_feed_sync.log
 
-# When NVT count reaches ~95,000, try the wizard again
+# When NVT count reaches ~95,000, feeds are ready
 ls /var/lib/openvas/plugins/ | wc -l
 ```
+
+> **Note:** The first feed sync downloads ~2 GB of vulnerability data (NVT, SCAP, CERT). This is normal and can take 30-60+ minutes depending on internet speed. Subsequent syncs are incremental and much faster.
 
 ### Feed sync is slow or stuck
 
@@ -405,6 +426,28 @@ ps aux | grep greenbone-feed-sync
 # Kill any stuck processes and retry
 sudo pkill -f greenbone-feed-sync
 gvm-update-feeds
+```
+
+### gvmd won't start — "client server initialisation failed"
+
+gvmd requires TLS certificates to accept GMP connections. These are generated during install by `gvm-manage-certs -a`. If missing:
+
+```bash
+# Regenerate TLS certificates
+sudo gvm-manage-certs -a
+
+# Fix ownership
+sudo chown -R _gvm:_gvm /var/lib/gvm/CA /var/lib/gvm/private/CA
+
+# Restart
+gvm-restart
+```
+
+Check the log for confirmation:
+
+```bash
+grep -i "cert\|tls\|initialisation" /var/log/gvm/gvmd.log | tail -5
+# Should NOT show "failed to set credentials key file"
 ```
 
 ### PostgreSQL not starting
