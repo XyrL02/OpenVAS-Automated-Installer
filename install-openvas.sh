@@ -170,7 +170,7 @@ log "Systemd overrides configured (gsad HTTP-only :9392, gvmd TCP :9390)"
 # =====================================================================
 log "Setting up GVM admin user..."
 
-sudo -u _gvm gvmd --create-user="admin:admin" 2>/dev \
+sudo -u _gvm gvmd --create-user="admin:admin" 2>/dev/null \
     && info "Admin user created" \
     || info "Admin user may already exist (ok)"
 
@@ -179,10 +179,16 @@ log "Setting Feed Owner ID in database..."
 if sudo -u postgres psql -d gvmd -tAc "SELECT 1 FROM settings WHERE name='Feed Owner ID'" 2>/dev/null | grep -q 1; then
     info "Feed Owner ID already set"
 else
-    sudo -u postgres psql -d gvmd -c \
-        "INSERT INTO settings (uuid, name, owner, value, comment) VALUES ('7865fcf0-aa31-4073-a2f4-a4aaae81cc9d', 'Feed Owner ID', 1, '1', 'Feed owner set to admin user');" 2>/dev/null \
-        && info "Feed Owner ID set to admin" \
-        || warn "Could not set Feed Owner ID (may need manual fix)"
+    # Use gvmd to set Feed Owner ID — requires the admin user to exist first
+    # Get admin user UUID
+    ADMIN_UUID=$(sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | grep "admin" | awk '{print $2}' | head -1)
+    if [ -n "$ADMIN_UUID" ]; then
+        sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID" 2>/dev/null \
+            && info "Feed Owner ID set to admin ($ADMIN_UUID)" \
+            || warn "Could not set Feed Owner ID via gvmd — may need manual fix"
+    else
+        warn "Could not find admin user UUID — skipping Feed Owner ID (run after first login)"
+    fi
 fi
 
 # =====================================================================
