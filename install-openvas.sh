@@ -237,11 +237,14 @@ else
     log "ospd-openvas already running"
 fi
 
-# 4. Start gvmd
+# 4. Start gvmd (needs time for DB init + feed sync on first start)
 if ! systemctl is-active --quiet gvmd 2>/dev/null; then
     log "Starting gvmd..."
     sudo systemctl start gvmd 2>/dev/null
-    sleep 3
+    for i in $(seq 1 20); do
+        sleep 1
+        systemctl is-active --quiet gvmd 2>/dev/null && break
+    done
     systemctl is-active --quiet gvmd 2>/dev/null && log "gvmd started (PID: $(pgrep -x gvmd | head -1))" || err "gvmd failed to start"
 else
     log "gvmd already running (PID: $(pgrep -x gvmd | head -1))"
