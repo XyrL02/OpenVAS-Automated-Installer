@@ -349,17 +349,29 @@ log "Feed sync complete."
 FEEDSEOF
 chmod +x "$SCRIPTS_DIR/gvm-update-feeds"
 
-# Symlink scripts to system-wide PATH (done early so they're available immediately)
+# Symlink scripts to system-wide PATH
 mkdir -p "$HOME/.local/bin"
 for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
     ln -sf "$SCRIPTS_DIR/$script" "$HOME/.local/bin/$script" 2>/dev/null || true
     ln -sf "$SCRIPTS_DIR/$script" "/usr/local/bin/$script" 2>/dev/null || true
 done
+# Verify symlinks exist
+for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
+    if [ -f "/usr/local/bin/$script" ]; then
+        chmod +x "/usr/local/bin/$script"
+    elif [ -f "$SCRIPTS_DIR/$script" ]; then
+        cp "$SCRIPTS_DIR/$script" "/usr/local/bin/$script"
+        chmod +x "/usr/local/bin/$script"
+    fi
+done
 info "Management scripts installed to /usr/local/bin/"
+hash -r  # refresh PATH cache
 
 # =====================================================================
 # SECTION 6: Create GVM admin user + Feed Owner ID
 # =====================================================================
+# Wrapped in subshell — failures here should NOT kill the installer
+(
 log "Setting up GVM admin user..."
 
 sudo -u _gvm gvmd --create-user="admin:admin" 2>/dev/null \
@@ -370,15 +382,16 @@ log "Setting Feed Owner ID in database..."
 if sudo -u postgres psql -d gvmd -tAc "SELECT 1 FROM settings WHERE name='Feed Owner ID'" 2>/dev/null | grep -q 1; then
     info "Feed Owner ID already set"
 else
-    ADMIN_UUID=$(sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | grep "admin" | awk '{print $2}' | head -1)
+    ADMIN_UUID=$(timeout 10 sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | grep "admin" | awk '{print $2}' | head -1 || true)
     if [ -n "$ADMIN_UUID" ]; then
-        sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID" 2>/dev/null \
+        timeout 10 sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID" 2>/dev/null \
             && info "Feed Owner ID set to admin ($ADMIN_UUID)" \
             || warn "Could not set Feed Owner ID via gvmd — may need manual fix"
     else
         warn "Could not find admin user UUID — skipping Feed Owner ID (run after first login)"
     fi
 fi
+) || warn "Admin user/Feed Owner setup had issues — run manually after first login"
 
 # =====================================================================
 # SECTION 7: Feed synchronization (runs last — can be slow)
