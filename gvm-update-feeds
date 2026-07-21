@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -uo pipefail
+GREEN='\e[32m'; YELLOW='\e[33m'; RESET='\e[0m'
+log()  { echo -e "${GREEN}[+]${RESET} $*"; }
+warn() { echo -e "${YELLOW}[!]${RESET} $*"; }
+log "Syncing Greenbone vulnerability feeds..."
+if command -v greenbone-feed-sync &>/dev/null; then
+    sudo greenbone-feed-sync 2>&1 | tail -10
+elif [ -f /usr/lib/gvm/scripts/greenbone-nvt-sync ]; then
+    sudo -u _gvm /usr/lib/gvm/scripts/greenbone-nvt-sync 2>&1 | tail -5
+    sudo -u _gvm /usr/lib/gvm/scripts/greenbone-scapdata-sync 2>&1 | tail -5
+    sudo -u _gvm /usr/lib/gvm/scripts/greenbone-certdata-sync 2>&1 | tail -5
+else
+    warn "Feed sync tools not found"
+fi
+log "Feed sync complete."

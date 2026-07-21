@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -uo pipefail
+GREEN='\e[32m'; RESET='\e[0m'
+log() { echo -e "${GREEN}[+]${RESET} $*"; }
+
+echo "Stopping GVM services..."
+for svc in gsad ospd-openvas gvmd; do
+    if pgrep -x "$svc" >/dev/null 2>&1 || pgrep -f "$svc" >/dev/null 2>&1; then
+        log "Stopping $svc..."
+        sudo pkill -x "$svc" 2>/dev/null || sudo pkill -f "$svc" 2>/dev/null
+        sleep 1
+        (pgrep -x "$svc" >/dev/null 2>&1 || pgrep -f "$svc" >/dev/null 2>&1) && sudo pkill -9 -x "$svc" 2>/dev/null
+        log "$svc stopped"
+    else
+        log "$svc not running (skipped)"
+    fi
+done
+log "All GVM services stopped."

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -uo pipefail
+GREEN='\e[32m'; RED='\e[31m'; YELLOW='\e[33m'; CYAN='\e[36m'; RESET='\e[0m'
+echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
+echo -e "${CYAN}  Greenbone Vulnerability Management — Status${RESET}"
+echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
+echo ""
+check_svc() {
+    local name="$1" check="$2"
+    if eval "$check" >/dev/null 2>&1; then
+        echo -e "  ${GREEN}RUNNING${RESET}  $name (PID: $(eval "$check" | head -1))"
+    else
+        echo -e "  ${RED}STOPPED${RESET}  $name"
+    fi
+}
+check_svc "gvmd"         "pgrep -x gvmd"
+check_svc "ospd-openvas" "pgrep -f ospd-openvas"
+check_svc "gsad"         "pgrep -x gsad"
+echo ""
+echo -e "  ${YELLOW}Web UI:${RESET} http://127.0.0.1:9392"
+if systemctl is-active --quiet postgresql 2>/dev/null; then
+    echo -e "  ${GREEN}POSTGRESQL:${RESET} running"
+else
+    echo -e "  ${RED}POSTGRESQL:${RESET} stopped"
+fi
+echo ""

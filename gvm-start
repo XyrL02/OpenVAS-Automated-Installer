@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -uo pipefail
+GREEN='\e[32m'; RED='\e[31m'; YELLOW='\e[33m'; CYAN='\e[36m'; RESET='\e[0m'
+log()  { echo -e "${GREEN}[+]${RESET} $*"; }
+err()  { echo -e "${RED}[-]${RESET} $*"; }
+
+echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
+echo -e "${CYAN}  Starting Greenbone Vulnerability Management (GVM)${RESET}"
+echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
+
+# 1. PostgreSQL
+if ! systemctl is-active --quiet postgresql 2>/dev/null; then
+    log "Starting PostgreSQL..."
+    sudo systemctl start postgresql 2>/dev/null || sudo pg_ctlcluster 18 main start 2>/dev/null
+fi
+
+# 2. Runtime dirs
+sudo mkdir -p /run/gvmd /run/ospd /var/log/gvm 2>/dev/null
+sudo chown _gvm:_gvm /run/gvmd /run/ospd /var/log/gvm 2>/dev/null
+
+# 3. gvmd
+if ! pgrep -x gvmd >/dev/null 2>&1; then
+    log "Starting gvmd..."
+    sudo -u _gvm gvmd --listen=127.0.0.1 --port=9390 --unix-socket=/run/gvmd/gvmd.sock 2>/dev/null &
+    sleep 3
+    pgrep -x gvmd >/dev/null 2>&1 && log "gvmd started (PID: $(pgrep -x gvmd))" || err "gvmd failed"
+else
+    log "gvmd already running (PID: $(pgrep -x gvmd))"
+fi
+
+# 4. ospd-openvas
+if ! pgrep -f "ospd-openvas" >/dev/null 2>&1; then
+    log "Starting ospd-openvas..."
+    sudo mkdir -p /run/ospd 2>/dev/null
+    sudo chown _gvm:_gvm /run/ospd 2>/dev/null
+    sudo -u _gvm ospd-openvas --unix-socket=/run/ospd/ospd-openvas.sock --pid-file=/run/ospd/ospd-openvas.pid --log-file=/var/log/gvm/ospd-openvas.log --lock-file-dir=/run/ospd 2>/dev/null &
+    sleep 3
+    pgrep -f "ospd-openvas" >/dev/null 2>&1 && log "ospd-openvas started" || err "ospd-openvas failed"
+else
+    log "ospd-openvas already running"
+fi
+
+# 5. gsad (HTTP-only mode for local use)
+if ! pgrep -x gsad >/dev/null 2>&1; then
+    log "Starting gsad (web UI)..."
+    sudo gsad --http-only --listen=127.0.0.1 --port=9392 --mlisten=127.0.0.1 --mport=9390 2>/dev/null &
+    sleep 3
+    pgrep -x gsad >/dev/null 2>&1 && log "gsad started" || err "gsad failed"
+else
+    log "gsad already running"
+fi
+
+echo ""
+log "GVM Services:"
+echo "  Web UI:       http://127.0.0.1:9392"
+echo "  gvmd:         $(pgrep -x gvmd >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
+echo "  ospd-openvas: $(pgrep -f ospd-openvas >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
+echo "  gsad:         $(pgrep -x gsad >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
+echo ""
