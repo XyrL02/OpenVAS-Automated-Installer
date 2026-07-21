@@ -165,8 +165,10 @@ EOF
 sudo mkdir -p /etc/systemd/system/gvmd.service.d
 sudo tee /etc/systemd/system/gvmd.service.d/override.conf >/dev/null << 'EOF'
 [Service]
+Type=simple
+PIDFile=
 ExecStart=
-ExecStart=/usr/sbin/gvmd --listen=127.0.0.1 --port=9390
+ExecStart=/usr/sbin/gvmd --osp-vt-update=/run/ospd/ospd-openvas.sock --listen-group=_gvm --listen=127.0.0.1 --port=9390 --foreground
 EOF
 
 sudo systemctl daemon-reload 2>/dev/null
@@ -189,25 +191,28 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}  Starting Greenbone Vulnerability Management (GVM)${RESET}"
 echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
 
-# Ensure systemd overrides exist (self-healing)
+# Self-heal: ensure systemd overrides are correct (always write, never leave stale)
 if [ ! -f /etc/systemd/system/gsad.service.d/override.conf ]; then
     sudo mkdir -p /etc/systemd/system/gsad.service.d
-    sudo tee /etc/systemd/system/gsad.service.d/override.conf >/dev/null << 'OVR'
+fi
+sudo tee /etc/systemd/system/gsad.service.d/override.conf >/dev/null << 'OVR'
 [Service]
 ExecStart=
 ExecStart=/usr/sbin/gsad --foreground --http-only --listen 127.0.0.1 --port 9392 --mlisten 127.0.0.1 --mport 9390
 OVR
-    sudo systemctl daemon-reload 2>/dev/null
-fi
+
 if [ ! -f /etc/systemd/system/gvmd.service.d/override.conf ]; then
     sudo mkdir -p /etc/systemd/system/gvmd.service.d
-    sudo tee /etc/systemd/system/gvmd.service.d/override.conf >/dev/null << 'OVR'
-[Service]
-ExecStart=
-ExecStart=/usr/sbin/gvmd --listen=127.0.0.1 --port=9390
-OVR
-    sudo systemctl daemon-reload 2>/dev/null
 fi
+sudo tee /etc/systemd/system/gvmd.service.d/override.conf >/dev/null << 'OVR'
+[Service]
+Type=simple
+PIDFile=
+ExecStart=
+ExecStart=/usr/sbin/gvmd --osp-vt-update=/run/ospd/ospd-openvas.sock --listen-group=_gvm --listen=127.0.0.1 --port=9390 --foreground
+OVR
+
+sudo systemctl daemon-reload 2>/dev/null
 
 # 1. Start PostgreSQL
 if ! systemctl is-active --quiet postgresql 2>/dev/null; then
@@ -215,46 +220,47 @@ if ! systemctl is-active --quiet postgresql 2>/dev/null; then
     sudo systemctl start postgresql 2>/dev/null || sudo pg_ctlcluster 18 main start 2>/dev/null
 fi
 
-# 2. Create /run/gvmd with proper ownership
-sudo mkdir -p /run/gvmd 2>/dev/null
-sudo chown _gvm:_gvm /run/gvmd 2>/dev/null
+# 2. Ensure runtime directories exist with correct ownership
+sudo mkdir -p /run/gvmd /run/ospd 2>/dev/null
+sudo chown _gvm:_gvm /run/gvmd /run/ospd 2>/dev/null
 
-# 3. Start gvmd
-if ! pgrep -x gvmd >/dev/null 2>&1; then
-    log "Starting gvmd..."
-    sudo -u _gvm gvmd --listen=127.0.0.1 --port=9390 --database=gvmd --unix-socket=/run/gvmd/gvmd.sock 2>/dev/null &
-    sleep 2
-    pgrep -x gvmd >/dev/null 2>&1 && log "gvmd started (PID: $(pgrep -x gvmd))" || err "gvmd failed to start"
-else
-    log "gvmd already running (PID: $(pgrep -x gvmd))"
-fi
-
-# 4. Start ospd-openvas
-if ! pgrep -f "ospd-openvas" >/dev/null 2>&1; then
+# 3. Start ospd-openvas (gvmd depends on it for --osp-vt-update)
+if ! systemctl is-active --quiet ospd-openvas 2>/dev/null; then
     log "Starting ospd-openvas..."
-    sudo -u _gvm ospd-openvas --unix-socket=/run/ospd/ospd-openvas.sock --pid-file=/run/ospd/ospd-openvas.pid --log-file=/var/log/gvm/ospd-openvas.log --lock-file-dir=/run/ospd 2>/dev/null &
+    sudo systemctl start ospd-openvas 2>/dev/null
     sleep 2
-    pgrep -f "ospd-openvas" >/dev/null 2>&1 && log "ospd-openvas started" || err "ospd-openvas failed"
+    systemctl is-active --quiet ospd-openvas 2>/dev/null && log "ospd-openvas started" || err "ospd-openvas failed"
 else
     log "ospd-openvas already running"
 fi
 
-# 5. Start gsad
-if ! pgrep -x gsad >/dev/null 2>&1; then
-    log "Starting gsad (web UI)..."
-    sudo gsad --listen=127.0.0.1 --port=9392 --mlisten=127.0.0.1 --mport=9390 2>/dev/null &
-    sleep 2
-    pgrep -x gsad >/dev/null 2>&1 && log "gsad started — Web UI: http://127.0.0.1:9392" || err "gsad failed"
+# 4. Start gvmd
+if ! systemctl is-active --quiet gvmd 2>/dev/null; then
+    log "Starting gvmd..."
+    sudo systemctl start gvmd 2>/dev/null
+    sleep 3
+    systemctl is-active --quiet gvmd 2>/dev/null && log "gvmd started (PID: $(pgrep -x gvmd | head -1))" || err "gvmd failed to start"
 else
-    log "gsad already running — Web UI: http://127.0.0.1:9392"
+    log "gvmd already running (PID: $(pgrep -x gvmd | head -1))"
+fi
+
+# 5. Start gsad (web UI)
+if ! systemctl is-active --quiet gsad 2>/dev/null; then
+    log "Starting gsad (web UI)..."
+    sudo systemctl start gsad 2>/dev/null
+    sleep 2
+    systemctl is-active --quiet gsad 2>/dev/null && log "gsad started" || err "gsad failed"
+else
+    log "gsad already running"
 fi
 
 echo ""
 log "GVM Services:"
 echo "  Web UI:       http://127.0.0.1:9392"
-echo "  gvmd:         $(pgrep -x gvmd >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
-echo "  ospd-openvas: $(pgrep -f ospd-openvas >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
-echo "  gsad:         $(pgrep -x gsad >/dev/null 2>&1 && echo 'RUNNING' || echo 'STOPPED')"
+echo "  PostgreSQL:   $(systemctl is-active postgresql 2>/dev/null || echo stopped)"
+echo "  ospd-openvas: $(systemctl is-active ospd-openvas 2>/dev/null || echo stopped)"
+echo "  gvmd:         $(systemctl is-active gvmd 2>/dev/null || echo stopped)"
+echo "  gsad:         $(systemctl is-active gsad 2>/dev/null || echo stopped)"
 echo ""
 STARTEOF
 chmod +x "$SCRIPTS_DIR/gvm-start"
@@ -267,19 +273,16 @@ GREEN='\e[32m'; RESET='\e[0m'
 log() { echo -e "${GREEN}[+]${RESET} $*"; }
 
 echo "Stopping GVM services..."
-for svc in gsad ospd-openvas gvmd; do
+for svc in gsad gvmd ospd-openvas; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
         sudo systemctl stop "$svc" 2>/dev/null
-    fi
-    if pgrep -x "$svc" >/dev/null 2>&1 || pgrep -f "$svc" >/dev/null 2>&1; then
-        sudo pkill -x "$svc" 2>/dev/null || sudo pkill -f "$svc" 2>/dev/null
-        sleep 1
-        (pgrep -x "$svc" >/dev/null 2>&1 || pgrep -f "$svc" >/dev/null 2>&1) && sudo pkill -9 -x "$svc" 2>/dev/null || sudo pkill -9 -f "$svc" 2>/dev/null
         log "$svc stopped"
     else
         log "$svc not running (skipped)"
     fi
 done
+# Kill any leftover processes
+sudo pkill -x gsad 2>/dev/null; sudo pkill -x gvmd 2>/dev/null
 log "All GVM services stopped."
 STOPEOF
 chmod +x "$SCRIPTS_DIR/gvm-stop"
@@ -296,27 +299,23 @@ echo -e "${CYAN}═════════════════════�
 echo ""
 
 check_svc() {
-    local name="$1" pid_check="$2"
-    if eval "$pid_check" >/dev/null 2>&1; then
-        PID=$(eval "$pid_check" | head -1)
-        echo -e "  ${GREEN}RUNNING${RESET}  $name (PID: $PID)"
+    local name="$1" svc="$2"
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        local pid
+        pid=$(systemctl show "$svc" --property=MainPID --value 2>/dev/null)
+        echo -e "  ${GREEN}RUNNING${RESET}  $name (PID: $pid)"
     else
         echo -e "  ${RED}STOPPED${RESET}  $name"
     fi
 }
 
-check_svc "gvmd"         "pgrep -x gvmd"
-check_svc "ospd-openvas" "pgrep -f ospd-openvas"
-check_svc "gsad"         "pgrep -x gsad"
+check_svc "PostgreSQL"   "postgresql"
+check_svc "ospd-openvas" "ospd-openvas"
+check_svc "gvmd"         "gvmd"
+check_svc "gsad"         "gsad"
 
 echo ""
 echo -e "  ${YELLOW}Web UI:${RESET} http://127.0.0.1:9392"
-
-if systemctl is-active --quiet postgresql 2>/dev/null; then
-    echo -e "  ${GREEN}POSTGRESQL:${RESET} running"
-else
-    echo -e "  ${RED}POSTGRESQL:${RESET} stopped"
-fi
 echo ""
 STATUSEOF
 chmod +x "$SCRIPTS_DIR/gvm-status"

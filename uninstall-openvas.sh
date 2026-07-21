@@ -7,6 +7,7 @@ set -uo pipefail
 
 GREEN='\e[32m'; RED='\e[31m'; YELLOW='\e[33m'; CYAN='\e[36m'; RESET='\e[0m'
 log()  { echo -e "${GREEN}[+]${RESET} $*"; }
+info() { echo -e "${GREEN}[+]${RESET} $*"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $*"; }
 
 echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
