@@ -166,34 +166,8 @@ sudo systemctl daemon-reload 2>/dev/null
 log "Systemd overrides configured (gsad HTTP-only :9392, gvmd TCP :9390)"
 
 # =====================================================================
-# SECTION 5: Create GVM admin user
-# =====================================================================
-log "Setting up GVM admin user..."
-
-sudo -u _gvm gvmd --create-user="admin:admin" 2>/dev/null \
-    && info "Admin user created" \
-    || info "Admin user may already exist (ok)"
-
-# Set Feed Owner ID so the Task Wizard works out of the box
-log "Setting Feed Owner ID in database..."
-if sudo -u postgres psql -d gvmd -tAc "SELECT 1 FROM settings WHERE name='Feed Owner ID'" 2>/dev/null | grep -q 1; then
-    info "Feed Owner ID already set"
-else
-    # Use gvmd to set Feed Owner ID — requires the admin user to exist first
-    # Get admin user UUID
-    ADMIN_UUID=$(sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | grep "admin" | awk '{print $2}' | head -1)
-    if [ -n "$ADMIN_UUID" ]; then
-        sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID" 2>/dev/null \
-            && info "Feed Owner ID set to admin ($ADMIN_UUID)" \
-            || warn "Could not set Feed Owner ID via gvmd — may need manual fix"
-    else
-        warn "Could not find admin user UUID — skipping Feed Owner ID (run after first login)"
-    fi
-fi
-
-# =====================================================================
-# SECTION 6: Create management scripts (before feed sync so they're
-#            available immediately even if sync is slow)
+# SECTION 5: Create management scripts + symlinks (BEFORE admin/feed setup
+#            which may hang on existing installs)
 # =====================================================================
 log "Creating management scripts..."
 
@@ -382,6 +356,29 @@ for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
     ln -sf "$SCRIPTS_DIR/$script" "/usr/local/bin/$script" 2>/dev/null || true
 done
 info "Management scripts installed to /usr/local/bin/"
+
+# =====================================================================
+# SECTION 6: Create GVM admin user + Feed Owner ID
+# =====================================================================
+log "Setting up GVM admin user..."
+
+sudo -u _gvm gvmd --create-user="admin:admin" 2>/dev/null \
+    && info "Admin user created" \
+    || info "Admin user may already exist (ok)"
+
+log "Setting Feed Owner ID in database..."
+if sudo -u postgres psql -d gvmd -tAc "SELECT 1 FROM settings WHERE name='Feed Owner ID'" 2>/dev/null | grep -q 1; then
+    info "Feed Owner ID already set"
+else
+    ADMIN_UUID=$(sudo -u _gvm gvmd --get-users --verbose 2>/dev/null | grep "admin" | awk '{print $2}' | head -1)
+    if [ -n "$ADMIN_UUID" ]; then
+        sudo -u _gvm gvmd --modify-setting="Feed Owner ID:UUID:$ADMIN_UUID" 2>/dev/null \
+            && info "Feed Owner ID set to admin ($ADMIN_UUID)" \
+            || warn "Could not set Feed Owner ID via gvmd — may need manual fix"
+    else
+        warn "Could not find admin user UUID — skipping Feed Owner ID (run after first login)"
+    fi
+fi
 
 # =====================================================================
 # SECTION 7: Feed synchronization (runs last — can be slow)
