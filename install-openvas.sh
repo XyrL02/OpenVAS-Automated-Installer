@@ -140,6 +140,9 @@ info "Credentials saved to: $INSTALL_DIR/creds.txt"
 log "Generating GVM TLS certificates..."
 sudo gvm-manage-certs -a 2>/dev/null && info "TLS certificates generated" \
     || warn "gvm-manage-certs failed — check manually"
+sudo chown -R _gvm:_gvm /var/lib/gvm/CA /var/lib/gvm/private/CA 2>/dev/null || true
+sudo chmod 600 /var/lib/gvm/private/CA/*.pem 2>/dev/null || true
+sudo chmod 644 /var/lib/gvm/CA/*.pem 2>/dev/null || true
 
 sudo mkdir -p /run/gvmd 2>/dev/null
 sudo chown _gvm:_gvm /run/gvmd 2>/dev/null || true
