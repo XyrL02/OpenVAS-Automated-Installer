@@ -421,6 +421,9 @@ sudo mkdir -p /var/log/gvm 2>/dev/null
 sudo chown _gvm:_gvm /var/log/gvm 2>/dev/null || true
 sudo mkdir -p /run/ospd 2>/dev/null
 sudo chown _gvm:_gvm /run/ospd 2>/dev/null || true
+sudo mkdir -p /var/lib/openvas 2>/dev/null
+sudo touch /var/lib/openvas/feed-update.lock 2>/dev/null
+sudo chown _gvm:_gvm /var/lib/openvas/feed-update.lock 2>/dev/null || true
 
 # =====================================================================
 # Done
