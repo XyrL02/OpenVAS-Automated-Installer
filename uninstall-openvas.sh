@@ -10,6 +10,10 @@ log()  { echo -e "${GREEN}[+]${RESET} $*"; }
 info() { echo -e "${GREEN}[+]${RESET} $*"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $*"; }
 
+# Restore terminal if stuck after colored output
+cleanup_terminal() { stty sane 2>/dev/null; }
+trap cleanup_terminal EXIT
+
 echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
 echo -e "${CYAN}  OpenVAS / GVM — Uninstaller for Kali Linux${RESET}"
 echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
@@ -72,7 +76,8 @@ info "Runtime directories and TLS certs cleaned"
 # 7. Optionally remove packages (ask user)
 echo ""
 echo -e "${YELLOW}Remove GVM packages? This will remove: gvm, gsad, gvmd, openvas-scanner, etc.${RESET}"
-read -p "Remove packages? [y/N]: " REMOVE_PKGS
+echo -n "Remove packages? [y/N]: "
+read -r REMOVE_PKGS
 if [[ "$REMOVE_PKGS" =~ ^[Yy]$ ]]; then
     log "Removing GVM packages..."
     sudo apt-get remove --purge -y gvm gsad gvm-tools openvas-scanner ospd-openvas \
