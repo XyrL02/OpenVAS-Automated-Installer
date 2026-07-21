@@ -192,20 +192,8 @@ else
 fi
 
 # =====================================================================
-# SECTION 6: Feed synchronization
-# =====================================================================
-log "Syncing Greenbone vulnerability feeds (this may take a while on first run)..."
-
-if command -v greenbone-feed-sync &>/dev/null; then
-    greenbone-feed-sync 2>&1 | tail -5 || warn "Feed sync may need manual run later"
-elif [ -f /usr/lib/gvm/scripts/greenbone-nvt-sync ]; then
-    sudo -u _gvm /usr/lib/gvm/scripts/greenbone-nvt-sync 2>&1 | tail -3 || true
-else
-    warn "Feed sync tool not found — feeds will sync on first gsad start"
-fi
-
-# =====================================================================
-# SECTION 7: Create management scripts
+# SECTION 6: Create management scripts (before feed sync so they're
+#            available immediately even if sync is slow)
 # =====================================================================
 log "Creating management scripts..."
 
@@ -387,12 +375,26 @@ log "Feed sync complete."
 FEEDSEOF
 chmod +x "$SCRIPTS_DIR/gvm-update-feeds"
 
-# Symlink scripts to system-wide PATH
+# Symlink scripts to system-wide PATH (done early so they're available immediately)
 mkdir -p "$HOME/.local/bin"
 for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
     ln -sf "$SCRIPTS_DIR/$script" "$HOME/.local/bin/$script" 2>/dev/null || true
     ln -sf "$SCRIPTS_DIR/$script" "/usr/local/bin/$script" 2>/dev/null || true
 done
+info "Management scripts installed to /usr/local/bin/"
+
+# =====================================================================
+# SECTION 7: Feed synchronization (runs last — can be slow)
+# =====================================================================
+log "Syncing Greenbone vulnerability feeds (this may take a while on first run)..."
+
+if command -v greenbone-feed-sync &>/dev/null; then
+    greenbone-feed-sync 2>&1 | tail -5 || warn "Feed sync may need manual run later"
+elif [ -f /usr/lib/gvm/scripts/greenbone-nvt-sync ]; then
+    sudo -u _gvm /usr/lib/gvm/scripts/greenbone-nvt-sync 2>&1 | tail -3 || true
+else
+    warn "Feed sync tool not found — feeds will sync on first gsad start"
+fi
 
 # =====================================================================
 # SECTION 8: Log directories and permissions
