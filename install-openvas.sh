@@ -355,18 +355,25 @@ log "Feed sync complete."
 FEEDSEOF
 chmod +x "$SCRIPTS_DIR/gvm-update-feeds"
 
-# Install scripts to /usr/local/bin (copy, not symlink — avoids /root issues)
+# Remove ANY existing files or symlinks at /usr/local/bin/gvm-* (stale from old installs)
 for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
-    sudo cp "$SCRIPTS_DIR/$script" "/usr/local/bin/$script"
-    sudo chmod +x "/usr/local/bin/$script"
+    sudo rm -f "/usr/local/bin/$script" 2>/dev/null || true
 done
-info "Management scripts installed to /usr/local/bin/"
+# Also remove any broken symlinks
+sudo find /usr/local/bin -maxdepth 1 -name 'gvm-*' -type l -delete 2>/dev/null || true
 
 # Remove conflicting system scripts
 if [ -f /usr/bin/gvm-start ] && [ ! -L /usr/bin/gvm-start ]; then
     sudo mv /usr/bin/gvm-start /usr/bin/gvm-start.bak 2>/dev/null || true
     info "Moved system /usr/bin/gvm-start → /usr/bin/gvm-start.bak"
 fi
+
+# Install scripts to /usr/local/bin (copy, not symlink — avoids /root issues)
+for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
+    sudo cp "$SCRIPTS_DIR/$script" "/usr/local/bin/$script"
+    sudo chmod +x "/usr/local/bin/$script"
+done
+info "Management scripts installed to /usr/local/bin/"
 hash -r
 
 # =====================================================================
