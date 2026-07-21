@@ -339,9 +339,9 @@ log() { echo -e "${GREEN}[+]${RESET} $*"; }
 
 log "Syncing Greenbone vulnerability feeds..."
 if command -v greenbone-feed-sync &>/dev/null; then
-    greenbone-feed-sync --type nvt 2>&1 | tail -5
-    greenbone-feed-sync --type scap 2>&1 | tail -5
-    greenbone-feed-sync --type cert 2>&1 | tail -5
+    sudo -u _gvm greenbone-feed-sync --type nvt 2>&1 | tail -5
+    sudo -u _gvm greenbone-feed-sync --type scap 2>&1 | tail -5
+    sudo -u _gvm greenbone-feed-sync --type cert 2>&1 | tail -5
 elif [ -f /usr/lib/gvm/scripts/greenbone-nvt-sync ]; then
     sudo -u _gvm /usr/lib/gvm/scripts/greenbone-nvt-sync 2>&1 | tail -3
     sudo -u _gvm /usr/lib/gvm/scripts/greenbone-scapdata-sync 2>&1 | tail -3
@@ -407,7 +407,7 @@ fi
 log "Syncing Greenbone vulnerability feeds (this may take a while on first run)..."
 
 if command -v greenbone-feed-sync &>/dev/null; then
-    greenbone-feed-sync 2>&1 | tail -5 || warn "Feed sync may need manual run later"
+    sudo -u _gvm greenbone-feed-sync 2>&1 | tail -5 || warn "Feed sync may need manual run later"
 elif [ -f /usr/lib/gvm/scripts/greenbone-nvt-sync ]; then
     sudo -u _gvm /usr/lib/gvm/scripts/greenbone-nvt-sync 2>&1 | tail -3 || true
 else
@@ -424,6 +424,9 @@ sudo chown _gvm:_gvm /run/ospd 2>/dev/null || true
 sudo mkdir -p /var/lib/openvas 2>/dev/null
 sudo touch /var/lib/openvas/feed-update.lock 2>/dev/null
 sudo chown _gvm:_gvm /var/lib/openvas/feed-update.lock 2>/dev/null || true
+sudo mkdir -p /var/lib/gvm 2>/dev/null
+sudo touch /var/lib/gvm/feed-update.lock 2>/dev/null
+sudo chown _gvm:_gvm /var/lib/gvm/feed-update.lock 2>/dev/null || true
 
 # =====================================================================
 # Done
