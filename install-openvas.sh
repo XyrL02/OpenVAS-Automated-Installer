@@ -387,10 +387,11 @@ log "Feed sync complete."
 FEEDSEOF
 chmod +x "$SCRIPTS_DIR/gvm-update-feeds"
 
-# Symlink scripts to ~/.local/bin
+# Symlink scripts to system-wide PATH
 mkdir -p "$HOME/.local/bin"
 for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
     ln -sf "$SCRIPTS_DIR/$script" "$HOME/.local/bin/$script" 2>/dev/null || true
+    ln -sf "$SCRIPTS_DIR/$script" "/usr/local/bin/$script" 2>/dev/null || true
 done
 
 # =====================================================================
