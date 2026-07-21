@@ -66,7 +66,8 @@ info "PostgreSQL database and user removed"
 # 6. Remove runtime directories
 log "Cleaning runtime directories..."
 sudo rm -rf /run/gvmd /run/ospd /var/log/gvm /var/lib/openvas/feed-update.lock 2>/dev/null || true
-info "Runtime directories cleaned"
+sudo rm -rf /var/lib/gvm/CA /var/lib/gvm/private/CA 2>/dev/null || true
+info "Runtime directories and TLS certs cleaned"
 
 # 7. Optionally remove packages (ask user)
 echo ""
