@@ -2,7 +2,7 @@
 # =====================================================================
 #  Standalone OpenVAS / GVM Installer for Kali Linux
 #  No dependencies — copy this file to any Kali machine and run it.
-#  Usage: sudo bash install-openvas.sh
+#  Usage: bash install-openvas.sh  (NO sudo bash — sudo is used inline)
 # =====================================================================
 set -euo pipefail
 
@@ -18,6 +18,13 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}  OpenVAS / GVM — Standalone Installer for Kali Linux${RESET}"
 echo -e "${CYAN}══════════════════════════════════════════════════════════${RESET}"
 echo ""
+
+# Pre-flight: check not run as root directly
+if [ "$(id -u)" -eq 0 ]; then
+    warn "Do NOT run this as: sudo bash install-openvas.sh"
+    warn "Run as: bash install-openvas.sh  (the script uses sudo where needed)"
+    exit 1
+fi
 
 mkdir -p "$INSTALL_DIR" "$SCRIPTS_DIR"
 
@@ -107,9 +114,9 @@ sudo -u postgres psql -c "ALTER USER $GVM_DB_USER WITH PASSWORD '$GVM_DB_PASS';"
 
 # Save credentials
 cat > "$INSTALL_DIR/creds.txt" << CREDS
-═══════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════
  OpenVAS / GVM Credentials
-═══════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════
 
 --- Web UI ---
 URL:      http://127.0.0.1:9392
@@ -122,7 +129,7 @@ Host:     localhost:5432
 Database: $GVM_DB_NAME
 Username: $GVM_DB_USER
 Password: $GVM_DB_PASS
-═══════════════════════════════════════════════════════
+═════════════════════════════════════════════════════════
 CREDS
 chmod 600 "$INSTALL_DIR/creds.txt"
 info "Credentials saved to: $INSTALL_DIR/creds.txt"
@@ -152,7 +159,7 @@ sudo mkdir -p /etc/systemd/system/gsad.service.d
 sudo tee /etc/systemd/system/gsad.service.d/override.conf >/dev/null << 'EOF'
 [Service]
 ExecStart=
-ExecStart=/usr/bin/gsad --http-only --listen 127.0.0.1 --port 9392 --mlisten 127.0.0.1 --mport 9390 --gnutls-options=
+ExecStart=/usr/sbin/gsad --foreground --http-only --listen 127.0.0.1 --port 9392 --mlisten 127.0.0.1 --mport 9390
 EOF
 
 sudo mkdir -p /etc/systemd/system/gvmd.service.d
@@ -166,8 +173,7 @@ sudo systemctl daemon-reload 2>/dev/null
 log "Systemd overrides configured (gsad HTTP-only :9392, gvmd TCP :9390)"
 
 # =====================================================================
-# SECTION 5: Create management scripts + symlinks (BEFORE admin/feed setup
-#            which may hang on existing installs)
+# SECTION 5: Create management scripts + install to /usr/local/bin
 # =====================================================================
 log "Creating management scripts..."
 
@@ -189,7 +195,7 @@ if [ ! -f /etc/systemd/system/gsad.service.d/override.conf ]; then
     sudo tee /etc/systemd/system/gsad.service.d/override.conf >/dev/null << 'OVR'
 [Service]
 ExecStart=
-ExecStart=/usr/bin/gsad --http-only --listen 127.0.0.1 --port 9392 --mlisten 127.0.0.1 --mport 9390 --gnutls-options=
+ExecStart=/usr/sbin/gsad --foreground --http-only --listen 127.0.0.1 --port 9392 --mlisten 127.0.0.1 --mport 9390
 OVR
     sudo systemctl daemon-reload 2>/dev/null
 fi
@@ -236,7 +242,7 @@ fi
 # 5. Start gsad
 if ! pgrep -x gsad >/dev/null 2>&1; then
     log "Starting gsad (web UI)..."
-    sudo gsad --listen=127.0.0.1 --port=9392 --mlisten=127.0.0.1 --mport=9390 --gnutls-options="" 2>/dev/null &
+    sudo gsad --listen=127.0.0.1 --port=9392 --mlisten=127.0.0.1 --mport=9390 2>/dev/null &
     sleep 2
     pgrep -x gsad >/dev/null 2>&1 && log "gsad started — Web UI: http://127.0.0.1:9392" || err "gsad failed"
 else
@@ -349,23 +355,19 @@ log "Feed sync complete."
 FEEDSEOF
 chmod +x "$SCRIPTS_DIR/gvm-update-feeds"
 
-# Symlink scripts to system-wide PATH
-mkdir -p "$HOME/.local/bin"
+# Install scripts to /usr/local/bin (copy, not symlink — avoids /root issues)
 for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
-    ln -sf "$SCRIPTS_DIR/$script" "$HOME/.local/bin/$script" 2>/dev/null || true
-    ln -sf "$SCRIPTS_DIR/$script" "/usr/local/bin/$script" 2>/dev/null || true
-done
-# Verify symlinks exist
-for script in gvm-start gvm-stop gvm-status gvm-restart gvm-update-feeds; do
-    if [ -f "/usr/local/bin/$script" ]; then
-        chmod +x "/usr/local/bin/$script"
-    elif [ -f "$SCRIPTS_DIR/$script" ]; then
-        cp "$SCRIPTS_DIR/$script" "/usr/local/bin/$script"
-        chmod +x "/usr/local/bin/$script"
-    fi
+    sudo cp "$SCRIPTS_DIR/$script" "/usr/local/bin/$script"
+    sudo chmod +x "/usr/local/bin/$script"
 done
 info "Management scripts installed to /usr/local/bin/"
-hash -r  # refresh PATH cache
+
+# Remove conflicting system scripts
+if [ -f /usr/bin/gvm-start ] && [ ! -L /usr/bin/gvm-start ]; then
+    sudo mv /usr/bin/gvm-start /usr/bin/gvm-start.bak 2>/dev/null || true
+    info "Moved system /usr/bin/gvm-start → /usr/bin/gvm-start.bak"
+fi
+hash -r
 
 # =====================================================================
 # SECTION 6: Create GVM admin user + Feed Owner ID
