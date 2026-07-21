@@ -135,18 +135,21 @@ chmod 600 "$INSTALL_DIR/creds.txt"
 info "Credentials saved to: $INSTALL_DIR/creds.txt"
 
 # =====================================================================
-# SECTION 3: Initialize GVM database schema
+# SECTION 3: Generate TLS certificates + initialize GVM database schema
 # =====================================================================
-log "Initializing GVM database..."
+log "Generating GVM TLS certificates..."
+sudo gvm-manage-certs -a 2>/dev/null && info "TLS certificates generated" \
+    || warn "gvm-manage-certs failed — check manually"
 
 sudo mkdir -p /run/gvmd 2>/dev/null
 sudo chown _gvm:_gvm /run/gvmd 2>/dev/null || true
 
+log "Initializing GVM database..."
 sudo -u _gvm gvmd --migrate 2>/dev/null || {
     log "First-time DB init — starting gvmd briefly..."
     sudo -u _gvm gvmd 2>/dev/null &
     GVM_PID=$!
-    sleep 5
+    sleep 8
     sudo kill $GVM_PID 2>/dev/null || true
 }
 
